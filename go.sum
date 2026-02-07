@@ -1,6 +1,2 @@
-github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a h1:4c0nc0krv8eh7gD809n+swLaCuFyHpxdrxwx0ZmHvBw=
-github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a/go.mod h1:QzgxDLY/qdKlvnbnb65eqTedhvQPbaSP2NqIbcuKvsQ=
-github.com/carved4/go-native-syscall v1.3.8 h1:3vPxodiw0mnI7u/8Mtymw6BExLe4Ibd7fXLNqQq8smw=
-github.com/carved4/go-native-syscall v1.3.8/go.mod h1:N6u621Q52vY0R1xcuPOPTnW9YKnlHwaZXhMfj6xayyw=
-github.com/carved4/go-wincall v1.2.5 h1:6T8I/poJbRyizFCIgig12LLjV5AYv6v5R9ldcREZq9w=
-github.com/carved4/go-wincall v1.2.5/go.mod h1:QLlWr2fIlL/VhCsIGBado544TgFKZ9ME677j3AwDi0E=
+github.com/carved4/go-wincall v1.2.7 h1:HwtlN7pTm+xd9c20D2WyXf82HwdcwuB7HlCwIByEnzY=
+github.com/carved4/go-wincall v1.2.7/go.mod h1:QLlWr2fIlL/VhCsIGBado544TgFKZ9ME677j3AwDi0E=

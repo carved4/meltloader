@@ -18,7 +18,7 @@ type ProcessEntry32 struct {
 	ParentProcessID   uint32
 	PriorityClassBase int32
 	Flags             uint32
-	ExeFile           [260]uint16 // MAX_PATH in UTF-16
+	ExeFile           [260]uint16
 }
 
 type ThreadEntry32 struct {
@@ -31,7 +31,6 @@ type ThreadEntry32 struct {
 	Flags          uint32
 }
 
-// FindTargetProcess finds a process by name and returns its PID and handle
 func FindTargetProcess(processName string) (uint32, uintptr, error) {
 	dllHash := wincall.GetHash("kernel32.dll")
 	moduleBase := wincall.GetModuleBase(dllHash)
@@ -92,12 +91,11 @@ func FindTargetProcess(processName string) (uint32, uintptr, error) {
 	}
 
 	if len(matches) > 1 {
-		// Common case: multiple matches; select the first one deterministically
-		fmt.Printf("[!] Multiple processes found matching '%s', selecting the first match (PID=%d)\n", processName, matches[0].ProcessID)
+		fmt.Printf("multiple processes found matching '%s', selecting the first match (PID=%d)\n", processName, matches[0].ProcessID)
 	}
 
 	targetProc := matches[0]
-	handle, _, _ := wincall.CallG0(openProcessAddr, 0x1FFFFF, 0, uintptr(targetProc.ProcessID)) // PROCESS_ALL_ACCESS
+	handle, _, _ := wincall.CallG0(openProcessAddr, 0x1FFFFF, 0, uintptr(targetProc.ProcessID))
 	if handle == 0 {
 		return 0, 0, fmt.Errorf("failed to open process %d", targetProc.ProcessID)
 	}

