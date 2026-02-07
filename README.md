@@ -86,7 +86,7 @@ err = pe.MeltRemote(pHandle, remoteBase)
 
 the `exportSpec` string parameter on `LoadDLLFromURL` controls which export to call after loading:
 
-- `"export_only:FuncName"` — calls the named export function
+- `"FuncName"` — calls the named export function
 - `""` — no export is called, the dll's DllMain is still invoked via DLL_PROCESS_ATTACH during loading
 
 ## technical implementation
