@@ -1,2 +1,4 @@
 github.com/carved4/go-wincall v1.2.7 h1:HwtlN7pTm+xd9c20D2WyXf82HwdcwuB7HlCwIByEnzY=
 github.com/carved4/go-wincall v1.2.7/go.mod h1:QLlWr2fIlL/VhCsIGBado544TgFKZ9ME677j3AwDi0E=
+github.com/carved4/net v0.0.0-20260208063346-6ab80b86833c h1:QfXucNYBgoQ3W9OVx1YzB6KBBX1XXE3O1Z22a3gOLHY=
+github.com/carved4/net v0.0.0-20260208063346-6ab80b86833c/go.mod h1:qA5xavRh00fLUoAxtVaFADPyDGaN74GpfMwS3QgTbRo=

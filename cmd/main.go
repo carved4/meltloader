@@ -5,7 +5,7 @@ import (
 	"log"
 	"runtime/debug"
 
-	"github.com/carved4/meltloader/pkg/net"
+	"github.com/carved4/net/pkg/net"
 	"github.com/carved4/meltloader/pkg/pe"
 )
 
